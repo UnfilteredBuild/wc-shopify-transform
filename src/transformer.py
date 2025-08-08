@@ -121,7 +121,7 @@ class WooCommerceToShopifyTransformer:
         
         # Tags and categories
         tags = self.process_tags(row.get('Tags', ''))
-        categories = self.process_categories(row.get('Categories', ''))
+        # categories = self.process_categories(row.get('Categories', ''))
         
         # Published status
         published_val = row.get('Published', 1)
@@ -141,7 +141,7 @@ class WooCommerceToShopifyTransformer:
             'Title': product_name,
             'Body (HTML)': description,
             'Vendor': '',
-            'Product Category': categories,
+            'Product Category': '',
             'Type': '',
             'Tags': tags,
             'Published': published,
