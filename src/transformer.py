@@ -43,41 +43,14 @@ class WooCommerceToShopifyTransformer:
             return []
         return [img.strip() for img in str(images_str).split(',') if img.strip()]
     
-    def convert_weight_to_grams(self, weight_lbs: Any) -> int:
+    def convert_weight_to_grams(self, weight_lbs: Any) -> float:
         """Convert weight from pounds to grams."""
         if not weight_lbs or pd.isna(weight_lbs):
-            return 0
+            return 0.0000
         try:
-            return int(float(weight_lbs) * 453.592)
+            return round(float(weight_lbs) * 453.592, 4)
         except (ValueError, TypeError):
-            return 0
-    
-    def process_tags(self, tags_str: str) -> str:
-        """Process and clean product tags."""
-        if not tags_str or pd.isna(tags_str):
-            return ""
-        tag_list = [tag.strip().replace('#', '') for tag in str(tags_str).split(',')]
-        return ', '.join([tag for tag in tag_list if tag])
-    
-    def process_categories(self, categories_str: str) -> str:
-        """Process and deduplicate product categories."""
-        if not categories_str or pd.isna(categories_str):
-            return ""
-        
-        # Split categories by common separators
-        category_list = re.split(r'[,;>]', str(categories_str))
-        
-        # Clean and dedupe categories
-        cleaned_categories = []
-        seen_categories = set()
-        
-        for cat in category_list:
-            clean_cat = self.clean_string(cat)
-            if clean_cat and clean_cat.lower() not in seen_categories:
-                cleaned_categories.append(clean_cat)
-                seen_categories.add(clean_cat.lower())
-        
-        return ', '.join(cleaned_categories)
+            return 0.0000
     
     def process_description(self, description: str) -> str:
         """Clean product description by removing line breaks."""
@@ -119,10 +92,6 @@ class WooCommerceToShopifyTransformer:
         # Weight conversion
         weight_grams = self.convert_weight_to_grams(row.get('Weight (lbs)', 0))
         
-        # Tags and categories
-        tags = self.process_tags(row.get('Tags', ''))
-        # categories = self.process_categories(row.get('Categories', ''))
-        
         # Published status
         published_val = row.get('Published', 1)
         published = 'TRUE' if published_val != -1 else 'FALSE'
@@ -143,9 +112,9 @@ class WooCommerceToShopifyTransformer:
             'Vendor': '',
             'Product Category': '',
             'Type': '',
-            'Tags': tags,
+            'Tags': '',
             'Published': published,
-            'Option1 Name': '',
+            'Option1 Name': product_name,
             'Option1 Value': '',
             'Option2 Name': '',
             'Option2 Value': '',
@@ -160,7 +129,7 @@ class WooCommerceToShopifyTransformer:
             'Variant Price': variant_price,
             'Variant Compare At Price': compare_at_price,
             'Variant Requires Shipping': 'TRUE',
-            'Variant Taxable': 'TRUE' if row.get('Tax status', '') == 'taxable' else 'FALSE',
+            'Variant Taxable': 'TRUE',
             'Variant Barcode': '',
             'Image Src': images[0] if images else '',
             'Image Position': '1' if images else '',
