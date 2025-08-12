@@ -45,8 +45,24 @@ class WooCommerceToShopifyTransformer:
     
     def convert_weight_to_grams(self, weight_lbs: Any) -> float:
         """Convert weight from pounds to grams."""
-        if not weight_lbs or pd.isna(weight_lbs):
+        # Handle pandas NA first to avoid ambiguity error
+        try:
+            if pd.isna(weight_lbs):
+                return 0.0000
+        except (TypeError, ValueError):
+            pass
+        
+        # Handle other empty/None cases
+        if weight_lbs is None:
             return 0.0000
+        
+        # Handle empty string cases
+        try:
+            if weight_lbs == '' or (hasattr(weight_lbs, '__len__') and len(str(weight_lbs).strip()) == 0):
+                return 0.0000
+        except (TypeError, ValueError):
+            pass
+            
         try:
             return round(float(weight_lbs) * 453.592, 4)
         except (ValueError, TypeError):

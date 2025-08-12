@@ -1,0 +1,8 @@
+{
+  "major": 1,
+  "minor": 0,
+  "patch": 1,
+  "build": 0,
+  "last_updated": "2025-08-12T11:03:26.363672",
+  "release_notes": "Added version management system and UI display"
+}
