@@ -130,7 +130,7 @@ class WooCommerceToShopifyTransformer:
             'Type': '',
             'Tags': '',
             'Published': published,
-            'Option1 Name': product_name,
+            'Option1 Name': '',
             'Option1 Value': '',
             'Option2 Name': '',
             'Option2 Value': '',
@@ -160,7 +160,7 @@ class WooCommerceToShopifyTransformer:
             'Google Shopping / Condition': '',
             'Google Shopping / Custom Product': '',
             'Variant Image': '',
-            'Variant Weight Unit': 'g',
+            'Variant Weight Unit': 'lbs',
             'Variant Tax Code': '',
             'Cost per item': '',
             'Included / United States': 'TRUE',
@@ -175,19 +175,18 @@ class WooCommerceToShopifyTransformer:
         }
     
     def create_additional_image_rows(self, base_row: Dict[str, Any], images: List[str]) -> List[Dict[str, Any]]:
-        """Create additional rows for extra product images."""
+        """Create additional rows for extra product images with only essential fields."""
         additional_rows = []
         handle = base_row.get('Handle', '')
-        # Use Title instead of product_name since that's what's in the Shopify columns
-        product_name = base_row.get('Title', base_row.get('product_name', ''))
         
         for i, image in enumerate(images[1:], 2):
+            # Create row with all columns empty
             image_row = {col: '' for col in self.shopify_columns}
+            # Only populate the essential fields for additional image rows
             image_row.update({
                 'Handle': handle,
                 'Image Src': image,
-                'Image Position': str(i),
-                'Image Alt Text': product_name
+                'Image Position': str(i)
             })
             additional_rows.append(image_row)
         
@@ -199,10 +198,11 @@ class WooCommerceToShopifyTransformer:
         
         for col in numeric_columns:
             if col in df.columns:
-                # Replace empty strings and None values with 0 for numeric columns
-                df[col] = df[col].apply(lambda x: 0 if pd.isna(x) or x == '' or x is None else x)
-                # Convert to numeric, coercing errors to 0
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                # Clean numeric values based on row type
+                df[col] = df.apply(lambda row: self._clean_numeric_value(row, col), axis=1)
+                
+                # Convert NaN values to empty strings for CSV export compatibility
+                df[col] = df[col].apply(lambda x: '' if pd.isna(x) else x)
         
         # Handle Compare At Price specially - it can be empty
         if 'Variant Compare At Price' in df.columns:
@@ -211,6 +211,29 @@ class WooCommerceToShopifyTransformer:
             )
         
         return df
+    
+    def _clean_numeric_value(self, row: pd.Series, col: str) -> Any:
+        """Clean a numeric value, using NaN for image-only rows to avoid conversion errors."""
+        # Check if this is an image-only row (has Image Position but no Title)
+        is_image_row = (row.get('Image Position', '') != '' and 
+                       row.get('Image Position', '') != '1' and 
+                       row.get('Title', '') == '')
+        
+        value = row[col]
+        
+        # For image-only rows, use NaN instead of empty strings to avoid conversion errors
+        if is_image_row:
+            return pd.NA if pd.isna(value) or value == '' or value is None else value
+        
+        # For main product rows, convert empty values to 0
+        if pd.isna(value) or value == '' or value is None:
+            return 0
+        
+        # Convert to numeric, coercing errors to 0 for main rows, NaN for image rows
+        try:
+            return pd.to_numeric(value, errors='raise')
+        except (ValueError, TypeError):
+            return pd.NA if is_image_row else 0
     
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
         """Transform WooCommerce DataFrame to Shopify import format."""
