@@ -3,6 +3,7 @@ WooCommerce to Shopify Transformer Package
 """
 
 from transformer import WooCommerceToShopifyTransformer
+from customer_transformer import CustomerToShopifyTransformer
 from config import APP_CONFIG, USER_INSTRUCTIONS, EXPECTED_CSV_FORMAT
 from utils import *
 
