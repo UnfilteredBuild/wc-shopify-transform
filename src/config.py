@@ -50,6 +50,26 @@ USER_INSTRUCTIONS = """
 - Converts tags and categories
 """
 
+# Customer instructions for users
+CUSTOMER_INSTRUCTIONS = """
+1. **Prepare your customer data** in CSV format
+2. **Upload the CSV file** using the file uploader
+3. **Review validation results** - fix any errors if needed
+4. **Use auto-fix** for 4-digit US zip codes if offered
+5. **Download** the Shopify-ready customer CSV file
+
+---
+
+### 🔧 What this tool does:
+- Validates US zip code formats (5-digit or 5+4)
+- Auto-fixes 4-digit zip codes by adding leading zeros
+- Converts email marketing preferences (1 → "yes", other → "no")
+- Creates retailer tags based on Is_Retailer/Role columns
+- Adds import tracking note ("Imported from WooCommerce")
+- Removes helper columns (Role, Is_Retailer) from final output
+- Preserves leading zeros in zip codes and phone numbers
+"""
+
 # Expected CSV format help text
 EXPECTED_CSV_FORMAT = """
 Your WooCommerce CSV should include these columns:

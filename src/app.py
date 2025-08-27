@@ -5,7 +5,7 @@ Streamlit app for transforming WooCommerce product exports to Shopify import for
 import streamlit as st
 import pandas as pd
 
-from config import APP_CONFIG, USER_INSTRUCTIONS, EXPECTED_CSV_FORMAT
+from config import APP_CONFIG, USER_INSTRUCTIONS, CUSTOMER_INSTRUCTIONS, EXPECTED_CSV_FORMAT
 from transformer import WooCommerceToShopifyTransformer
 from customer_transformer import CustomerToShopifyTransformer
 from utils import (
@@ -165,6 +165,9 @@ def show_customer_import_interface():
     
     st.header("Customer Import")
     st.markdown("Transform your customer data into Shopify import format")
+    
+    # Create sidebar with customer-specific instructions
+    create_sidebar_instructions(CUSTOMER_INSTRUCTIONS)
     
     # Main content layout
     col1, col2 = st.columns([2, 1])
