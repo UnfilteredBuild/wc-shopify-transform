@@ -1,0 +1,5 @@
+First Name,Last Name,Email,Accepts Email Marketing,Default Address Company,Default Address Address1,Default Address Address2,Default Address City,Default Address Province Code,Default Address Country Code,Default Address Zip,Phone,Role
+John,Doe,john@example.com,1,ACME Corp,123 Main St,,Boston,Massachusetts,US,02101,0123456789,customer
+Jane,Smith,jane@example.com,0,XYZ Inc,456 Oak Ave,,New York,N,US,10001,0987654321,retailer
+Bob,Johnson,bob@example.com,1,ABC Corp,789 Pine St,,Miami,,US,33101,5551234567,customer
+Alice,Wilson,alice@example.com,0,DEF Corp,321 Elm St,,Seattle,WA,US,98101,4445556666,retailer

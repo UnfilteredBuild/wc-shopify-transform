@@ -53,7 +53,29 @@ These files can be used to:
 All test files follow the customer CSV template format with required columns:
 - First Name, Last Name, Email, Accepts Email Marketing
 - Default Address fields (Company, Address1, City, Province Code, Country Code, Zip)
-- Phone, Is_Retailer
+- Phone, Role
+
+#### **New Test File:**
+
+#### `test_role_only.csv`
+- **Purpose**: Test Role-based tagging (Is_Retailer logic completely removed)
+- **Contains**: Customers with Role='retailer' and Role='customer'
+- **Expected Behavior**: Should create Tags='Retailer' only for Role='retailer' entries
+
+#### `test_invalid_us_states.csv`
+- **Purpose**: Test US state code validation for various invalid formats
+- **Contains**: Mix of full state names, single characters, empty values, and valid codes
+- **Expected Behavior**: Should show validation errors for invalid US state codes with helpful fix instructions and bypass button
+
+#### `test_mixed_errors.csv`
+- **Purpose**: Test mixed validation errors (critical + bypassable)
+- **Contains**: Customers with empty email (critical) AND invalid state codes (bypassable)
+- **Expected Behavior**: Should NOT show bypass button due to critical validation errors
+
+#### `test_bypass_workflow.csv`
+- **Purpose**: Test complete bypass workflow with both zip fixes and state bypass
+- **Contains**: Customer with 4-digit zip (fixable) AND invalid state code (bypassable)
+- **Expected Behavior**: Should fix zip code first, then allow bypass for state code while preserving fixed zip
 
 ## Expected Validation Rules
 
@@ -61,3 +83,12 @@ All test files follow the customer CSV template format with required columns:
 - **4-Digit US Zips**: Automatically fixable by adding leading zero
 - **Non-US Addresses**: Zip/postal codes not validated for format
 - **Empty Zips**: Allowed for any country
+- **US State Codes**: Must be exactly 2 letters (e.g., CA, NY, TX, FL) for US addresses
+- **Non-US State/Province Codes**: No format validation applied
+- **Empty US State Codes**: Not allowed - will show validation error with fix instructions
+
+## Bypass Feature
+
+- **Bypassable Errors**: US state code validation errors can be bypassed with "Bypass Fixes and Download" button
+- **Non-Bypassable Errors**: Missing required columns, empty emails, and other critical validation errors cannot be bypassed
+- **Mixed Scenarios**: If both bypassable and non-bypassable errors exist, bypass button will not appear

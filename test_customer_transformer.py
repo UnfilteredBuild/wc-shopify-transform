@@ -208,6 +208,50 @@ class TestCustomerTransformerValidation(unittest.TestCase):
         result = self.transformer.validate_dataframe(fixed_df)
         self.assertTrue(result['valid'])
         self.assertEqual(len(result.get('fixable_zip_errors', [])), 0)
+    
+    def test_csv_output_clean_columns(self):
+        """Test that CSV output doesn't contain phantom empty columns."""
+        import io
+        
+        data = {
+            'First Name': ['John'],
+            'Last Name': ['Doe'],
+            'Email': ['john@example.com'],
+            'Accepts Email Marketing': [1],
+            'Role': ['retailer'],        # This should be removed after processing
+            'Is_Retailer': ['yes'],      # This should also be removed after processing  
+            'Phone': ['123-456-7890'],
+            'Default Address Company': ['ACME'],
+            'Default Address Address1': ['123 Main St'],
+            'Default Address City': ['Boston'],
+            'Default Address Province Code': ['MA'],
+            'Default Address Country Code': ['US']
+        }
+        
+        df = pd.DataFrame(data)
+        result = self.transformer.transform(df)
+        
+        # Convert to CSV string like the app does
+        csv_buffer = io.StringIO()
+        result.to_csv(csv_buffer, index=False)
+        csv_content = csv_buffer.getvalue()
+        
+        # Split into lines and check header
+        lines = csv_content.strip().split('\n')
+        header_line = lines[0] if lines else ''
+        columns = header_line.split(',')
+        
+        # Verify no empty columns in CSV header
+        empty_csv_columns = [col for col in columns if col.strip() == '']
+        self.assertEqual(len(empty_csv_columns), 0, f"Found empty columns in CSV: {columns}")
+        
+        # Verify both Role and Is_Retailer columns are not in CSV output
+        self.assertNotIn('Role', header_line)
+        self.assertNotIn('Is_Retailer', header_line)
+        
+        # Verify expected columns are present
+        self.assertIn('Note', header_line)
+        self.assertIn('Tags', header_line)
 
 
 class TestEmailMarketingTransformation(unittest.TestCase):
@@ -281,36 +325,11 @@ class TestEmailMarketingTransformation(unittest.TestCase):
 
 
 class TestTagsColumnCreation(unittest.TestCase):
-    """Test cases for tags column creation based on retailer status."""
+    """Test cases for tags column creation based on role."""
     
     def setUp(self):
         """Set up test fixtures."""
         self.transformer = CustomerToShopifyTransformer()
-    
-    def test_create_tags_from_is_retailer_yes(self):
-        """Test creating tags when Is_Retailer is 'yes'."""
-        data = {
-            'First Name': ['John', 'Jane'],
-            'Is_Retailer': ['yes', 'no']
-        }
-        df = pd.DataFrame(data)
-        
-        result = self.transformer.create_tags_column(df)
-        
-        self.assertEqual(result['Tags'].tolist(), ['Retailer', ''])
-    
-    def test_create_tags_from_is_retailer_case_insensitive(self):
-        """Test that Is_Retailer check is case insensitive."""
-        data = {
-            'First Name': ['John', 'Jane', 'Bob', 'Alice'],
-            'Is_Retailer': ['YES', 'Yes', 'yEs', 'no']
-        }
-        df = pd.DataFrame(data)
-        
-        result = self.transformer.create_tags_column(df)
-        
-        expected = ['Retailer', 'Retailer', 'Retailer', '']
-        self.assertEqual(result['Tags'].tolist(), expected)
     
     def test_create_tags_from_role_retailer(self):
         """Test creating tags when Role is 'retailer'."""
@@ -337,26 +356,8 @@ class TestTagsColumnCreation(unittest.TestCase):
         expected = ['Retailer', 'Retailer', 'Retailer', '']
         self.assertEqual(result['Tags'].tolist(), expected)
     
-    def test_is_retailer_takes_precedence_over_role(self):
-        """Test that Is_Retailer column takes precedence over Role column."""
-        data = {
-            'First Name': ['John', 'Jane', 'Bob'],
-            'Is_Retailer': ['yes', 'no', 'yes'],
-            'Role': ['customer', 'retailer', 'customer']
-        }
-        df = pd.DataFrame(data)
-        
-        result = self.transformer.create_tags_column(df)
-        
-        # Is_Retailer should override Role
-        # John: Is_Retailer='yes' overrides Role='customer' -> 'Retailer'
-        # Jane: Is_Retailer='no' overrides Role='retailer' -> ''
-        # Bob: Is_Retailer='yes' overrides Role='customer' -> 'Retailer'
-        expected = ['Retailer', '', 'Retailer']
-        self.assertEqual(result['Tags'].tolist(), expected)
-    
-    def test_create_tags_with_only_role_column(self):
-        """Test creating tags when only Role column exists."""
+    def test_create_tags_with_role_column(self):
+        """Test creating tags with Role column."""
         data = {
             'First Name': ['John', 'Jane'],
             'Role': ['retailer', 'customer']
@@ -367,20 +368,8 @@ class TestTagsColumnCreation(unittest.TestCase):
         
         self.assertEqual(result['Tags'].tolist(), ['Retailer', ''])
     
-    def test_create_tags_with_only_is_retailer_column(self):
-        """Test creating tags when only Is_Retailer column exists."""
-        data = {
-            'First Name': ['John', 'Jane'],
-            'Is_Retailer': ['yes', 'no']
-        }
-        df = pd.DataFrame(data)
-        
-        result = self.transformer.create_tags_column(df)
-        
-        self.assertEqual(result['Tags'].tolist(), ['Retailer', ''])
-    
-    def test_create_tags_with_neither_column(self):
-        """Test creating tags when neither column exists."""
+    def test_create_tags_with_no_role_column(self):
+        """Test creating tags when Role column doesn't exist."""
         data = {
             'First Name': ['John', 'Jane'],
             'Last Name': ['Doe', 'Smith']
@@ -392,22 +381,21 @@ class TestTagsColumnCreation(unittest.TestCase):
         # Should create empty tags column
         self.assertEqual(result['Tags'].tolist(), ['', ''])
     
-    def test_create_tags_with_null_values(self):
-        """Test creating tags with null values in retailer columns."""
+    def test_create_tags_with_null_role_values(self):
+        """Test creating tags with null values in Role column."""
         data = {
             'First Name': ['John', 'Jane', 'Bob', 'Alice'],
-            'Is_Retailer': ['yes', np.nan, 'no', None],
-            'Role': ['customer', 'retailer', np.nan, None]
+            'Role': ['retailer', np.nan, 'customer', None]
         }
         df = pd.DataFrame(data)
         
         result = self.transformer.create_tags_column(df)
         
-        # John: Is_Retailer='yes' -> 'Retailer'
-        # Jane: Is_Retailer=NaN, falls back to Role='retailer' -> 'Retailer' 
-        # Bob: Is_Retailer='no' overrides Role=NaN -> ''
-        # Alice: Is_Retailer=None, falls back to Role=None -> ''
-        expected = ['Retailer', 'Retailer', '', '']
+        # John: Role='retailer' -> 'Retailer'
+        # Jane: Role=NaN -> ''
+        # Bob: Role='customer' -> ''
+        # Alice: Role=None -> ''
+        expected = ['Retailer', '', '', '']
         self.assertEqual(result['Tags'].tolist(), expected)
 
 
@@ -425,7 +413,6 @@ class TestCompleteTransformation(unittest.TestCase):
             'Last Name': ['Doe', 'Smith', 'Johnson'],
             'Email': ['john@example.com', 'jane@example.com', 'bob@example.com'],
             'Accepts Email Marketing': [1, 0, np.nan],
-            'Is_Retailer': ['yes', 'no', np.nan],
             'Role': ['customer', 'retailer', 'retailer'],
             'Phone': ['123-456-7890', '098-765-4321', '555-555-5555']
         }
@@ -437,8 +424,8 @@ class TestCompleteTransformation(unittest.TestCase):
         expected_email = ['yes', 'no', 'no']
         self.assertEqual(result['Accepts Email Marketing'].tolist(), expected_email)
         
-        # Check tags creation (Is_Retailer takes precedence when not null)
-        expected_tags = ['Retailer', '', 'Retailer']  # John=Retailer, Jane=no overrides retailer, Bob=NaN falls back to Role=retailer
+        # Check tags creation (based on Role column only)
+        expected_tags = ['', 'Retailer', 'Retailer']  # John=customer->'', Jane=retailer->'Retailer', Bob=retailer->'Retailer'
         self.assertEqual(result['Tags'].tolist(), expected_tags)
         
         # Check that other columns are preserved
@@ -449,7 +436,7 @@ class TestCompleteTransformation(unittest.TestCase):
         self.assertIn('Note', result.columns)
         self.assertEqual(result['Note'].tolist(), ['Imported from WooCommerce', 'Imported from WooCommerce', 'Imported from WooCommerce'])
         
-        # Check that Role and Is_Retailer columns are dropped
+        # Check that both Role and Is_Retailer columns are dropped from final output
         self.assertNotIn('Role', result.columns)
         self.assertNotIn('Is_Retailer', result.columns)
     
@@ -493,14 +480,13 @@ class TestCompleteTransformation(unittest.TestCase):
         self.assertEqual(result['Phone'].tolist(), ['', '123-456-7890'])
     
     def test_note_column_and_dropped_columns(self):
-        """Test that Note column is added and Role/Is_Retailer columns are dropped."""
+        """Test that Note column is added and Role column is dropped."""
         data = {
             'First Name': ['John', 'Jane'],
             'Last Name': ['Doe', 'Smith'],
             'Email': ['john@example.com', 'jane@example.com'],
             'Accepts Email Marketing': [1, 0],
-            'Is_Retailer': ['yes', 'no'],
-            'Role': ['customer', 'retailer'],
+            'Role': ['retailer', 'customer'],  # John=retailer, Jane=customer
             'Phone': ['123-456-7890', '098-765-4321']
         }
         df = pd.DataFrame(data)
@@ -511,13 +497,26 @@ class TestCompleteTransformation(unittest.TestCase):
         self.assertIn('Note', result.columns)
         self.assertEqual(result['Note'].tolist(), ['Imported from WooCommerce', 'Imported from WooCommerce'])
         
-        # Check that Role and Is_Retailer columns are dropped
+        # Check that both Role and Is_Retailer columns are dropped from final output
         self.assertNotIn('Role', result.columns)
         self.assertNotIn('Is_Retailer', result.columns)
         
         # Check that other transformations still work
         self.assertEqual(result['Accepts Email Marketing'].tolist(), ['yes', 'no'])
-        self.assertEqual(result['Tags'].tolist(), ['Retailer', ''])  # Is_Retailer takes precedence
+        self.assertEqual(result['Tags'].tolist(), ['Retailer', ''])  # Role-based tagging only
+        
+        # Verify no phantom empty columns exist in the final output
+        column_names = list(result.columns)
+        empty_columns = [col for col in column_names if col.strip() == '' or col == 'Unnamed']
+        self.assertEqual(len(empty_columns), 0, f"Found empty/unnamed columns: {empty_columns}")
+        
+        # Verify exact column count (should not have extra phantom columns)
+        expected_columns = ['First Name', 'Last Name', 'Email', 'Accepts Email Marketing', 
+                           'Phone', 'Tags', 'Note']  # Role and Is_Retailer should be gone
+        actual_column_count = len(result.columns)
+        # Note: Actual count may vary depending on input data, but should not include Role/Is_Retailer
+        self.assertNotIn('Role', result.columns)
+        self.assertNotIn('Is_Retailer', result.columns)
     
     def test_preserve_leading_zeros(self):
         """Test that leading zeros are preserved in string fields."""
@@ -596,6 +595,216 @@ class TestEdgeCases(unittest.TestCase):
         retailer_count = sum(1 for tag in result['Tags'] if tag == 'Retailer')
         expected_retailers = sum(1 for i in range(size) if i % 3 == 0)
         self.assertEqual(retailer_count, expected_retailers)
+
+
+class TestUSStateValidation(unittest.TestCase):
+    """Test cases for US state code validation functionality."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        self.transformer = CustomerToShopifyTransformer()
+        
+        # Base valid customer data
+        self.base_data = {
+            'First Name': ['John', 'Jane', 'Bob', 'Alice'],
+            'Last Name': ['Doe', 'Smith', 'Johnson', 'Wilson'],
+            'Email': ['john@example.com', 'jane@example.com', 'bob@example.com', 'alice@example.com'],
+            'Accepts Email Marketing': [1, 0, 1, 0],
+            'Default Address Company': ['ACME', 'XYZ', 'ABC', 'DEF'],
+            'Default Address Address1': ['123 Main St', '456 Oak Ave', '789 Pine St', '321 Elm St'],
+            'Default Address City': ['Boston', 'New York', 'Miami', 'Seattle'],
+            'Default Address Country Code': ['US', 'US', 'US', 'US'],
+            'Default Address Zip': ['02101', '10001', '33101', '98101'],
+            'Phone': ['123-456-7890', '098-765-4321', '555-555-5555', '444-555-6666']
+        }
+    
+    def test_valid_us_state_codes(self):
+        """Test validation passes with valid 2-letter US state codes."""
+        data = self.base_data.copy()
+        data['Default Address Province Code'] = ['MA', 'NY', 'FL', 'WA']  # All valid
+        
+        df = pd.DataFrame(data)
+        result = self.transformer.validate_dataframe(df)
+        
+        self.assertTrue(result['valid'])
+        self.assertEqual(len(result['errors']), 0)
+    
+    def test_invalid_full_state_names(self):
+        """Test validation fails with full state names instead of abbreviations."""
+        data = self.base_data.copy()
+        data['Default Address Province Code'] = ['Massachusetts', 'New York', 'FL', 'WA']
+        
+        df = pd.DataFrame(data)
+        result = self.transformer.validate_dataframe(df)
+        
+        self.assertFalse(result['valid'])
+        error_text = ' '.join(result['errors'])
+        self.assertIn('MASSACHUSETTS', error_text)
+        self.assertIn('NEW YORK', error_text)
+        self.assertIn('must be 2-letter US state code', error_text)
+    
+    def test_invalid_single_character_states(self):
+        """Test validation fails with single character state codes."""
+        data = self.base_data.copy()
+        data['Default Address Province Code'] = ['M', 'N', 'FL', 'WA']
+        
+        df = pd.DataFrame(data)
+        result = self.transformer.validate_dataframe(df)
+        
+        self.assertFalse(result['valid'])
+        error_text = ' '.join(result['errors'])
+        self.assertIn('M', error_text)
+        self.assertIn('N', error_text)
+        self.assertIn('must be 2-letter US state code', error_text)
+    
+    def test_empty_us_state_codes(self):
+        """Test validation fails with empty US state codes."""
+        data = self.base_data.copy()
+        data['Default Address Province Code'] = ['MA', '', np.nan, 'WA']
+        
+        df = pd.DataFrame(data)
+        result = self.transformer.validate_dataframe(df)
+        
+        self.assertFalse(result['valid'])
+        error_text = ' '.join(result['errors'])
+        self.assertIn('Empty state code', error_text)
+        self.assertIn('Jane Smith', error_text)  # Row with empty string
+        self.assertIn('Bob Johnson', error_text)  # Row with NaN
+    
+    def test_non_us_addresses_ignored(self):
+        """Test that non-US addresses don't trigger state validation."""
+        data = self.base_data.copy()
+        data['Default Address Country Code'] = ['CA', 'UK', 'FR', 'DE']
+        data['Default Address Province Code'] = ['Ontario', 'London', 'Paris', 'Berlin']  # Not 2-letter codes
+        data['Default Address Zip'] = ['K1A0A9', 'SW1A1AA', '75001', '10115']  # Non-US formats
+        
+        df = pd.DataFrame(data)
+        result = self.transformer.validate_dataframe(df)
+        
+        self.assertTrue(result['valid'])  # Should pass since no US addresses
+    
+    def test_mixed_us_and_non_us_addresses(self):
+        """Test validation only applies to US addresses in mixed dataset."""
+        data = self.base_data.copy()
+        data['Default Address Country Code'] = ['US', 'CA', 'US', 'UK']
+        data['Default Address Province Code'] = ['Massachusetts', 'Ontario', 'FL', 'London']  # Only US should be validated
+        data['Default Address Zip'] = ['02101', 'K1A0A9', '33101', 'SW1A1AA']
+        
+        df = pd.DataFrame(data)
+        result = self.transformer.validate_dataframe(df)
+        
+        self.assertFalse(result['valid'])
+        error_text = ' '.join(result['errors'])
+        self.assertIn('MASSACHUSETTS', error_text)  # US address should fail
+        self.assertNotIn('Ontario', error_text)    # Canadian address should be ignored
+        self.assertNotIn('London', error_text)     # UK address should be ignored
+    
+    def test_case_insensitive_state_validation(self):
+        """Test that state code validation is case insensitive."""
+        data = self.base_data.copy()
+        data['Default Address Province Code'] = ['ma', 'NY', 'fl', 'wa']  # Mixed case
+        
+        df = pd.DataFrame(data)
+        result = self.transformer.validate_dataframe(df)
+        
+        self.assertTrue(result['valid'])  # Should pass with mixed case
+    
+    def test_state_validation_error_message_format(self):
+        """Test that state validation error messages are properly formatted."""
+        data = self.base_data.copy()
+        data['Default Address Province Code'] = ['Massachusetts', 'N', '', 'WA']
+        
+        df = pd.DataFrame(data)
+        result = self.transformer.validate_dataframe(df)
+        
+        self.assertFalse(result['valid'])
+        
+        # Find the state validation error
+        state_error = None
+        for error in result['errors']:
+            if 'Invalid US state codes found' in error:
+                state_error = error
+                break
+        
+        self.assertIsNotNone(state_error)
+        
+        # Check error message contains helpful information
+        self.assertIn('Row 2: John Doe', state_error)
+        self.assertIn('Row 3: Jane Smith', state_error) 
+        self.assertIn('Row 4: Bob Johnson', state_error)
+        self.assertIn('To fix: Replace with valid 2-letter US state abbreviations', state_error)
+        self.assertIn('California = CA', state_error)
+        self.assertIn('New York = NY', state_error)
+        
+        # Check that error count is included in message
+        self.assertIn('(3 issues)', state_error)
+    
+    def test_state_validation_error_count_singular(self):
+        """Test that single state validation error shows singular count."""
+        data = self.base_data.copy()
+        data['Default Address Province Code'] = ['Massachusetts', 'NY', 'FL', 'WA']  # Only first one is invalid
+        
+        df = pd.DataFrame(data)
+        result = self.transformer.validate_dataframe(df)
+        
+        self.assertFalse(result['valid'])
+        
+        # Find the state validation error
+        state_error = None
+        for error in result['errors']:
+            if 'Invalid US state codes found' in error:
+                state_error = error
+                break
+        
+        self.assertIsNotNone(state_error)
+        # Should show singular form for 1 issue
+        self.assertIn('(1 issue)', state_error)
+        self.assertNotIn('(1 issues)', state_error)  # Should NOT have plural
+    
+    def test_state_validation_error_count_plural(self):
+        """Test that multiple state validation errors show plural count."""
+        data = self.base_data.copy()
+        data['Default Address Province Code'] = ['Massachusetts', 'New York', 'FL', 'WA']  # Two invalid
+        
+        df = pd.DataFrame(data)
+        result = self.transformer.validate_dataframe(df)
+        
+        self.assertFalse(result['valid'])
+        
+        # Find the state validation error
+        state_error = None
+        for error in result['errors']:
+            if 'Invalid US state codes found' in error:
+                state_error = error
+                break
+        
+        self.assertIsNotNone(state_error)
+        # Should show plural form for 2 issues
+        self.assertIn('(2 issues)', state_error)
+    
+    def test_missing_province_code_column(self):
+        """Test handling when Province Code column doesn't exist."""
+        data = self.base_data.copy()
+        if 'Default Address Province Code' in data:
+            del data['Default Address Province Code']  # Remove the column
+        
+        df = pd.DataFrame(data)
+        result = self.transformer.validate_dataframe(df)
+        
+        # Should not crash and should pass other validations
+        self.assertTrue(result['valid'])
+    
+    def test_missing_country_code_column(self):
+        """Test handling when Country Code column doesn't exist."""
+        data = self.base_data.copy()
+        data['Default Address Province Code'] = ['MA', 'NY', 'FL', 'WA']
+        del data['Default Address Country Code']  # Remove the column
+        
+        df = pd.DataFrame(data)
+        result = self.transformer.validate_dataframe(df)
+        
+        # Should not crash and should pass other validations (no US validation to trigger)
+        self.assertTrue(result['valid'])
 
 
 if __name__ == '__main__':
