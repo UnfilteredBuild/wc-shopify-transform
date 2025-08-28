@@ -196,109 +196,91 @@ def process_customer_file(uploaded_file):
     """Process the uploaded customer CSV file."""
     try:
         # Read the uploaded file, preserving leading zeros in string fields
-        # Define columns that should be treated as strings to preserve leading zeros
         string_columns = [
             'Default Address Zip', 'Phone', 'Default Address Province Code',
-            'Default Address Country Code', 'Is_Retailer'
+            'Default Address Country Code'
         ]
-        
-        # Create dtype dict for columns that exist
         dtype_dict = {}
-        
-        # First read to get column names
         temp_df = pd.read_csv(uploaded_file, nrows=0)
         for col in string_columns:
             if col in temp_df.columns:
                 dtype_dict[col] = str
         
-        # Reset file pointer and read with proper dtypes
         uploaded_file.seek(0)
         df = pd.read_csv(uploaded_file, dtype=dtype_dict)
         display_success_message(f"Successfully loaded {len(df)} customers!")
         
-        # Show preview of original data
         display_preview_section(df, "🔍 Preview Original Customer Data", expanded=False)
         
-        # Validate customer data
-        with st.spinner("🔍 Validating customer data..."):
-            transformer = CustomerToShopifyTransformer()
-            validation_result = transformer.validate_dataframe(df)
+        transformer = CustomerToShopifyTransformer()
+        validation_result = transformer.validate_dataframe(df)
         
         if validation_result['valid']:
             display_success_message("Customer data validation passed!")
-            
-            # Transform the data
             with st.spinner("🔄 Transforming customer data..."):
                 transformed_df = transformer.transform(df)
-            
             display_success_message(f"Transformation complete! Generated {len(transformed_df)} rows for Shopify import.")
-            
-            # Show preview of transformed data
             display_preview_section(transformed_df, "👀 Preview Transformed Customer Data", expanded=True)
-            
-            # Create download section
             create_customer_download_section(transformed_df)
         else:
-            # Display validation errors with better formatting
             st.error("🚫 Customer data validation failed!")
-            
-            # Check if there are fixable zip code errors
-            has_fixable_zips = validation_result.get('fixable_zip_errors', [])
-            
             for error in validation_result['errors']:
-                if '\n' in error:
-                    # Handle multi-line errors (like zip code validation)
-                    if '4-digit US zip codes found that can be auto-fixed' in error:
-                        st.warning(error)  # Use warning color for fixable errors
-                    else:
-                        st.error(error)
-                else:
-                    st.error(f"• {error}")
-            
-            # Show fix button if there are fixable zip codes
+                st.warning(error)
+
+            has_fixable_zips = any('4-digit US zip codes' in error for error in validation_result['errors'])
+
             if has_fixable_zips:
                 st.markdown("---")
-                _, col2, _ = st.columns([1, 2, 1])
-                with col2:
-                    if st.button(
-                        "🔧 Fix 4-digit Zip Codes", 
-                        type="primary",
-                        help=f"Automatically add leading zeros to {len(has_fixable_zips)} zip codes",
-                        use_container_width=True
-                    ):
-                        # Fix the zip codes
-                        with st.spinner("🔧 Fixing zip codes..."):
-                            fixed_df = transformer.fix_4digit_zip_codes(df)
-                        
-                        st.success(f"✅ Fixed {len(has_fixable_zips)} zip codes by adding leading zeros!")
-                        
-                        # Re-validate the fixed data
-                        with st.spinner("🔍 Re-validating data..."):
-                            new_validation = transformer.validate_dataframe(fixed_df)
-                        
-                        if new_validation['valid']:
-                            st.success("✅ All validation errors resolved!")
-                            
-                            # Transform the fixed data
-                            with st.spinner("🔄 Transforming customer data..."):
-                                transformed_df = transformer.transform(fixed_df)
-                            
-                            st.success(f"✅ Transformation complete! Generated {len(transformed_df)} rows for Shopify import.")
-                            
-                            # Show preview of transformed data
-                            display_preview_section(transformed_df, "👀 Preview Transformed Customer Data", expanded=True)
-                            
-                            # Create download section
-                            create_customer_download_section(transformed_df)
-                        else:
-                            st.error("❌ Some validation errors remain after fixing zip codes:")
-                            for error in new_validation['errors']:
-                                st.error(f"• {error}")
+                if st.button("🔧 Fix 4-digit Zip Codes", type="primary", use_container_width=True):
+                    fixed_df = transformer.fix_4digit_zip_codes(df)
+                    st.session_state.fixed_df = fixed_df
+                    st.success("Zip codes fixed. Re-validating...")
+                    
+                    new_validation_result = transformer.validate_dataframe(fixed_df)
+                    if new_validation_result['valid']:
+                        st.success("✅ All validation errors resolved!")
+                        with st.spinner("🔄 Transforming customer data..."):
+                            transformed_df = transformer.transform(fixed_df)
+                        display_preview_section(transformed_df, "👀 Preview Transformed Customer Data", expanded=True)
+                        create_customer_download_section(transformed_df)
+                    else:
+                        st.error("❌ Some validation errors remain after fixing zip codes:")
+                        for error in new_validation_result['errors']:
+                            st.warning(error)
+
+                if st.button("⏭️ Bypass Fixes and Download", use_container_width=True):
+                    bypass_and_download(df, transformer)
+
+            elif check_for_bypassable_errors(validation_result['errors']):
+                 if st.button("⏭️ Bypass Fixes and Download", use_container_width=True):
+                        bypass_and_download(df, transformer)
             else:
-                st.warning("⚠️ Please fix the validation errors above before proceeding with the transformation.")
-        
+                st.warning("⚠️ Please fix the validation errors above before proceeding.")
+
     except Exception as e:
         display_error_message(e)
+
+def bypass_and_download(df, transformer):
+    """Fix 4-digit zips and download the CSV."""
+    with st.spinner("🔧 Fixing 4-digit zip codes..."):
+        fixed_df = transformer.fix_4digit_zip_codes(df)
+    
+    with st.spinner("🔄 Transforming customer data..."):
+        transformed_df = transformer.transform(fixed_df)
+
+    st.success(f"✅ Transformation complete! Generated {len(transformed_df)} rows for Shopify import.")
+    st.warning("⚠️ Note: Some US addresses may have non-standard state codes that will need manual review in Shopify.")
+    
+    display_preview_section(transformed_df, "👀 Preview Transformed Customer Data", expanded=True)
+    create_customer_download_section(transformed_df)
+
+
+
+
+
+
+
+
 
 
 
@@ -327,7 +309,7 @@ def display_customer_upload_help():
         'First Name', 'Last Name', 'Email', 'Accepts Email Marketing',
         'Default Address Company', 'Default Address Address1', 'Default Address Address2',
         'Default Address City', 'Default Address Province Code', 'Default Address Country Code',
-        'Default Address Zip', 'Phone', 'Is_Retailer'
+        'Default Address Zip', 'Phone', 'Role'
     ]
     
     st.code(', '.join(expected_format))

@@ -87,6 +87,47 @@ class CustomerToShopifyTransformer:
                     errors.append(f"Invalid US zip codes found. US zip codes must be 5 digits or 5+4 format (12345 or 12345-6789):\n" + 
                                 "\n".join(invalid_zips))
         
+        # Check US state codes (2 characters for US addresses)
+        if 'Default Address Country Code' in df.columns and 'Default Address Province Code' in df.columns:
+            import re
+            
+            # Convert to string and handle nulls
+            country_codes = df['Default Address Country Code'].astype(str).str.upper()
+            province_codes = df['Default Address Province Code'].astype(str)
+            
+            # Find US entries
+            us_mask = country_codes == 'US'
+            us_customers = df[us_mask]
+            
+            if len(us_customers) > 0:
+                invalid_states = []
+                
+                # US state code pattern: exactly 2 uppercase letters
+                state_pattern = re.compile(r'^[A-Z]{2}$')
+                
+                for idx, row in us_customers.iterrows():
+                    state_code_raw = row['Default Address Province Code']
+                    # Check for truly empty/null values first
+                    if pd.isna(state_code_raw) or str(state_code_raw).strip() == '' or str(state_code_raw).strip().lower() == 'nan':
+                        customer_name = f"{row.get('First Name', 'Unknown')} {row.get('Last Name', 'Customer')}"
+                        invalid_states.append(f"Row {idx + 2}: {customer_name} - Empty state code")
+                        continue
+                    
+                    state_code = str(state_code_raw).strip().upper()
+                    
+                    # Check if state code matches valid US format (2 letters)
+                    if not state_pattern.match(state_code):
+                        customer_name = f"{row.get('First Name', 'Unknown')} {row.get('Last Name', 'Customer')}"
+                        invalid_states.append(f"Row {idx + 2}: {customer_name} - '{state_code}' (must be 2-letter US state code like 'CA', 'NY', 'TX')")
+                
+                # Handle invalid state codes
+                if invalid_states:
+                    error_count = len(invalid_states)
+                    errors.append(f"Invalid US state codes found ({error_count} issue{'s' if error_count != 1 else ''}). US addresses must have 2-letter state codes (e.g., CA, NY, TX, FL):\n" + 
+                                "\n".join(invalid_states) + 
+                                "\n\nTo fix: Replace with valid 2-letter US state abbreviations. Common examples:\n" +
+                                "• California = CA\n• New York = NY\n• Texas = TX\n• Florida = FL\n• Illinois = IL\n• Pennsylvania = PA")
+        
         return {
             'valid': len(errors) == 0,
             'errors': errors,
@@ -131,25 +172,15 @@ class CustomerToShopifyTransformer:
         return df
     
     def create_tags_column(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Create 'Tags' column based on 'Is_Retailer' and 'Role' columns."""
+        """Create 'Tags' column based on 'Role' column only (Is_Retailer logic removed)."""
         # Create "Tags" column
         df['Tags'] = ''
         
-        # Check Role column first
+        # Check Role column - if it contains 'retailer', set Tags to 'Retailer'
+        # Note: Is_Retailer column is ignored - only Role column determines tags
         if 'Role' in df.columns:
             mask_role = (df['Role'].notna()) & (df['Role'].str.lower() == 'retailer')
             df.loc[mask_role, 'Tags'] = 'Retailer'
-        
-        # Check Is_Retailer column (this will override Role if both exist)
-        if 'Is_Retailer' in df.columns:
-            # For Is_Retailer, only override if the value is not null
-            # 'yes' -> 'Retailer', any other non-null value (including 'no') -> ''
-            # null values don't override Role column results
-            mask_retailer_yes = (df['Is_Retailer'].notna()) & (df['Is_Retailer'].str.lower() == 'yes')
-            mask_retailer_not_yes = (df['Is_Retailer'].notna()) & (df['Is_Retailer'].str.lower() != 'yes')
-            
-            df.loc[mask_retailer_yes, 'Tags'] = 'Retailer'
-            df.loc[mask_retailer_not_yes, 'Tags'] = ''
         
         return df
     
@@ -191,9 +222,26 @@ class CustomerToShopifyTransformer:
         transformed_df['Note'] = 'Imported from WooCommerce'
         
         # Drop columns that shouldn't be in the final output
-        columns_to_drop = ['Role', 'Is_Retailer']
-        for col in columns_to_drop:
-            if col in transformed_df.columns:
-                transformed_df = transformed_df.drop(columns=[col])
+        columns_to_drop = ['Role', 'Is_Retailer']  # Drop both Role and Is_Retailer from final output
+        existing_columns_to_drop = [col for col in columns_to_drop if col in transformed_df.columns]
+        if existing_columns_to_drop:
+            transformed_df = transformed_df.drop(columns=existing_columns_to_drop)
         
-        return transformed_df
+        # Create a clean DataFrame with only the remaining columns to ensure no phantom columns
+        final_columns = [col for col in transformed_df.columns if col not in columns_to_drop]
+        clean_df = transformed_df[final_columns].copy()
+        clean_df.reset_index(drop=True, inplace=True)
+        
+        # Additional cleanup: rename any empty column names to avoid CSV issues
+        new_columns = []
+        for col in clean_df.columns:
+            if not col or col.strip() == '':
+                # Skip empty columns entirely by not including them
+                continue
+            new_columns.append(col.strip())
+        
+        # Only keep columns with valid names
+        if len(new_columns) != len(clean_df.columns):
+            clean_df = clean_df.loc[:, [col for col in clean_df.columns if col and col.strip()]]
+        
+        return clean_df

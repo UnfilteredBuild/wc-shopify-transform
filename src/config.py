@@ -64,9 +64,9 @@ CUSTOMER_INSTRUCTIONS = """
 - Validates US zip code formats (5-digit or 5+4)
 - Auto-fixes 4-digit zip codes by adding leading zeros
 - Converts email marketing preferences (1 → "yes", other → "no")
-- Creates retailer tags based on Is_Retailer/Role columns
-- Adds import tracking note ("Imported from WooCommerce")
-- Removes helper columns (Role, Is_Retailer) from final output
+- Creates retailer tags based on Role column (Role="retailer" → Tags="Retailer")
+- Adds import tracking note ("Imported from WooCommerce")  
+- Removes helper columns (Role) from final output
 - Preserves leading zeros in zip codes and phone numbers
 """
 
