@@ -5,9 +5,10 @@ Streamlit app for transforming WooCommerce product exports to Shopify import for
 import streamlit as st
 import pandas as pd
 
-from config import APP_CONFIG, USER_INSTRUCTIONS, CUSTOMER_INSTRUCTIONS, EXPECTED_CSV_FORMAT
+from config import APP_CONFIG, USER_INSTRUCTIONS, CUSTOMER_INSTRUCTIONS, ORDER_INSTRUCTIONS, EXPECTED_CSV_FORMAT
 from transformer import WooCommerceToShopifyTransformer
 from customer_transformer import CustomerToShopifyTransformer
+from order_transformer import OrderToShopifyTransformer
 from utils import (
     setup_page_config, display_app_header, create_sidebar_instructions,
     display_file_info, display_preview_section, display_success_message,
@@ -42,6 +43,8 @@ def main():
         show_product_import_interface()
     elif st.session_state.import_type == 'customers':
         show_customer_import_interface()
+    elif st.session_state.import_type == 'orders':
+        show_order_import_interface()
     
     # Display footer
     display_footer()
@@ -97,7 +100,7 @@ def show_import_type_selection():
     st.markdown("### Choose Import Type")
     st.markdown("Select the type of data you want to transform for Shopify:")
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         if st.button(
@@ -117,6 +120,16 @@ def show_import_type_selection():
             type="primary"
         ):
             st.session_state.import_type = 'customers'
+            st.rerun()
+    
+    with col3:
+        if st.button(
+            "📋 Order Import",
+            help="Transform order data to Shopify format",
+            use_container_width=True,
+            type="primary"
+        ):
+            st.session_state.import_type = 'orders'
             st.rerun()
 
 
@@ -260,6 +273,16 @@ def process_customer_file(uploaded_file):
     except Exception as e:
         display_error_message(e)
 
+def check_for_bypassable_errors(errors):
+    """Check if the errors are bypassable (like 4-digit zip codes)."""
+    bypassable_keywords = ['4-digit', 'zip code', 'zip codes']
+    for error in errors:
+        for keyword in bypassable_keywords:
+            if keyword.lower() in error.lower():
+                return True
+    return False
+
+
 def bypass_and_download(df, transformer):
     """Fix 4-digit zips and download the CSV."""
     with st.spinner("🔧 Fixing 4-digit zip codes..."):
@@ -313,6 +336,119 @@ def display_customer_upload_help():
     ]
     
     st.code(', '.join(expected_format))
+
+
+def show_order_import_interface():
+    """Display the order import interface."""
+    # Back button
+    if st.button("← Back to Import Type Selection"):
+        st.session_state.import_type = None
+        st.rerun()
+    
+    st.header("Order Import")
+    st.markdown("Transform your order data into Shopify import format")
+    
+    # Create sidebar with order-specific instructions
+    create_sidebar_instructions(ORDER_INSTRUCTIONS)
+    
+    # Main content layout
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.subheader("Upload Order CSV")
+        uploaded_file = st.file_uploader(
+            "Choose a CSV file",
+            type="csv",
+            help="Upload your order data CSV file",
+            key="order_uploader"
+        )
+    
+    with col2:
+        if uploaded_file:
+            display_file_info(uploaded_file)
+    
+    # Process uploaded file
+    if uploaded_file is not None:
+        process_order_file(uploaded_file)
+    else:
+        display_order_upload_help()
+
+
+def process_order_file(uploaded_file):
+    """Process the uploaded order CSV file."""
+    try:
+        # Read the uploaded file
+        df = pd.read_csv(uploaded_file)
+        display_success_message(f"Successfully loaded {len(df)} order records!")
+        
+        # Show preview of original data
+        display_preview_section(df, "🔍 Preview Original Order Data", expanded=False)
+        
+        # Transform the data
+        with st.spinner("🔄 Transforming order data..."):
+            transformer = OrderToShopifyTransformer()
+            
+            # Validate the data first
+            validation_result = transformer.validate_dataframe(df)
+            
+            if validation_result['warnings']:
+                for warning in validation_result['warnings']:
+                    st.warning(warning)
+            
+            if validation_result['valid']:
+                transformed_df = transformer.transform(df)
+                display_success_message(f"Transformation complete! Generated {len(transformed_df)} line items for Shopify import.")
+                
+                # Show preview of transformed data
+                display_preview_section(transformed_df, "👀 Preview Transformed Order Data", expanded=True)
+                
+                # Create download section
+                create_order_download_section(transformed_df)
+                
+                # Show transformation statistics
+                display_transformation_stats(df, transformed_df)
+            else:
+                st.error("🚫 Order data validation failed!")
+                for error in validation_result['errors']:
+                    st.warning(error)
+        
+    except Exception as e:
+        display_error_message(e)
+
+
+def create_order_download_section(transformed_df: pd.DataFrame):
+    """Create the download section for order CSV."""
+    download_filename = f"shopify_orders_{pd.Timestamp.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv"
+    csv_data = dataframe_to_csv_string(transformed_df)
+    
+    st.download_button(
+        label="📥 Download Shopify Order CSV",
+        data=csv_data,
+        file_name=download_filename,
+        mime="text/csv",
+        type="primary",
+        help="Download the transformed order CSV file ready for Shopify import"
+    )
+
+
+def display_order_upload_help():
+    """Display help information for order upload."""
+    st.info("👆 Please upload an order CSV file to get started!")
+    
+    st.markdown("**Expected Order CSV Columns (Common formats accepted):**")
+    expected_columns = [
+        'Name', 'Command', 'Send Receipt', 'Inventory Behaviour', 'Note', 'Tags', 'Tags Command', 
+        'Created At', 'Updated At', 'Cancelled At', 'Cancel: Reason', 'Cancel: Send Receipt', 
+        'Processed At', 'Closed At', 'Currency', 'Customer: Email', 'Customer: Phone', 
+        'Billing: First Name', 'Billing: Last Name', 'Billing: Company', 'Billing: Phone', 
+        'Billing: Address 1', 'Shipping: First Name', 'Shipping: Last Name', 'Line: Type', 
+        'Line: Title', 'Line: SKU', 'Line: Quantity', 'Line: Price', 'Transaction: Amount', 
+        'Fulfillment: Status', 'Fulfillment: Tracking Number'
+    ]
+    
+    st.code(', '.join(expected_columns))
+    
+    st.markdown("**Note:** The tool can handle various order export formats and will map available columns automatically.")
 
 
 def display_upload_help():

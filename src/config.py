@@ -70,6 +70,25 @@ CUSTOMER_INSTRUCTIONS = """
 - Preserves leading zeros in zip codes and phone numbers
 """
 
+# Order instructions for users
+ORDER_INSTRUCTIONS = """
+1. **Export your orders** from WooCommerce or other platform as CSV
+2. **Upload the CSV file** using the file uploader
+3. **Review the preview** of transformed order data
+4. **Download** the Shopify-ready order CSV file
+
+---
+
+### 🔧 What this tool does:
+- Converts order data to Shopify Matrixify import format
+- Maps line items with product titles and SKUs
+- Handles customer email and order processing dates
+- Converts fulfillment status and tracking information
+- Creates transaction records for payment processing
+- Generates product handles from product titles
+- Handles missing or incomplete order data gracefully
+"""
+
 # Expected CSV format help text
 EXPECTED_CSV_FORMAT = """
 Your WooCommerce CSV should include these columns:

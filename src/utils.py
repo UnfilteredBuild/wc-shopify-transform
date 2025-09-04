@@ -22,18 +22,50 @@ def display_transformation_stats(original_df: pd.DataFrame, transformed_df: pd.D
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("Original Products", len(original_df))
+        # Detect data type based on columns
+        if 'Line: Type' in transformed_df.columns:
+            st.metric("Original Orders", len(original_df))
+        elif 'First Name' in transformed_df.columns:
+            st.metric("Original Customers", len(original_df))
+        else:
+            st.metric("Original Products", len(original_df))
     
     with col2:
         st.metric("Shopify Rows", len(transformed_df))
     
     with col3:
-        products_with_images = len([row for _, row in transformed_df.iterrows() if row['Image Src']])
-        st.metric("Products with Images", products_with_images)
+        # Display relevant metric based on data type
+        if 'Image Src' in transformed_df.columns:
+            # Product data
+            products_with_images = len([row for _, row in transformed_df.iterrows() if pd.notna(row['Image Src']) and row['Image Src']])
+            st.metric("Products with Images", products_with_images)
+        elif 'Line: Type' in transformed_df.columns:
+            # Order data
+            fulfilled_orders = len([row for _, row in transformed_df.iterrows() if row['Fulfillment: Status'] == 'success'])
+            st.metric("Fulfilled Orders", fulfilled_orders)
+        elif 'Email' in transformed_df.columns:
+            # Customer data
+            marketing_enabled = len([row for _, row in transformed_df.iterrows() if row.get('Accepts Email Marketing', '') == 'yes'])
+            st.metric("Marketing Enabled", marketing_enabled)
+        else:
+            st.metric("Valid Records", len(transformed_df))
     
     with col4:
-        active_products = len([row for _, row in transformed_df.iterrows() if row['Status'] == 'active'])
-        st.metric("Active Products", active_products)
+        # Display relevant metric based on data type
+        if 'Status' in transformed_df.columns:
+            # Product data
+            active_products = len([row for _, row in transformed_df.iterrows() if row['Status'] == 'active'])
+            st.metric("Active Products", active_products)
+        elif 'Transaction: Amount' in transformed_df.columns:
+            # Order data
+            total_amount = sum([float(row['Transaction: Amount']) for _, row in transformed_df.iterrows() if pd.notna(row['Transaction: Amount'])])
+            st.metric("Total Amount", f"${total_amount:,.2f}")
+        elif 'Tags' in transformed_df.columns:
+            # Customer data
+            tagged_customers = len([row for _, row in transformed_df.iterrows() if pd.notna(row.get('Tags', '')) and row.get('Tags', '')])
+            st.metric("Tagged Customers", tagged_customers)
+        else:
+            st.metric("Complete Records", len(transformed_df))
 
 
 def generate_download_filename() -> str:
